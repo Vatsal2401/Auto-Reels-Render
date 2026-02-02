@@ -57,7 +57,7 @@ export class DbService {
 
     async deductCredits(userId: string, amount: number, description: string, referenceId: string, metadata?: any) {
         // 1. Get current balance
-        const userRes = await this.client.query('SELECT credits_balance FROM users WHERE id = $1FOR UPDATE', [userId]);
+        const userRes = await this.client.query('SELECT credits_balance FROM users WHERE id = $1 FOR UPDATE', [userId]);
         if (userRes.rowCount === 0) throw new Error('User not found');
         const currentBalance = userRes.rows[0].credits_balance;
 
