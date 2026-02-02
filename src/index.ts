@@ -111,7 +111,9 @@ const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => 
 });
 
 worker.on('ready', () => {
-    console.log('🚀 Render Worker is ready and waiting for jobs...');
+    const redisUrl = process.env.REDIS_URL || 'unknown';
+    const obfuscatedUrl = redisUrl.replace(/:[^:@]*@/, ':****@');
+    console.log(`🚀 Render Worker is ready and waiting for jobs on ${obfuscatedUrl}`);
 });
 
 worker.on('failed', (job, err) => {
