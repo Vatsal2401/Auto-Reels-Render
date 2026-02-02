@@ -22,6 +22,13 @@ interface RenderJobPayload {
     };
 }
 
+const CREDIT_COSTS: Record<string, number> = {
+    '30-60': 1,
+    '60-90': 2,
+    '90-120': 3,
+    default: 1,
+};
+
 const logMemory = (stage: string) => {
     const mem = process.memoryUsage();
     const toMB = (bytes: number) => (bytes / 1024 / 1024).toFixed(2);
@@ -78,10 +85,38 @@ const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => 
         const resultBlobId = `users/${userId}/media/${mediaId}/video/render/final_render.mp4`;
         await storage.upload(resultBlobId, createReadStream(outputPath));
 
-        // 4. Update Database
-        console.log(`[Worker] [${job.id}] 💾 Finalizing job in database...`);
-        await db.addAsset(mediaId, 'video', resultBlobId);
+        // 4. Update Database (Step)
+        console.log(`[Worker] [${job.id}] 💾 Finalizing step in database...`);
         await db.updateStepStatus(stepId, 'success', resultBlobId);
+
+        // 5. Finalize Media & Deduct Credits
+        console.log(`[Worker] [${job.id}] 🏁 Finalizing overall media and credits...`);
+        const mediaInfo = await db.getMediaInfo(mediaId);
+
+        if (mediaInfo) {
+            const userId = mediaInfo.user_id;
+            const config = mediaInfo.input_config || {};
+            const duration = config.duration || '30-60';
+            const topic = config.topic || 'Media';
+            const creditCost = (CREDIT_COSTS[duration] || CREDIT_COSTS.default) as number;
+
+            await db.finalizeMedia(mediaId, resultBlobId);
+
+            if (userId) {
+                try {
+                    await db.deductCredits(
+                        userId,
+                        creditCost,
+                        `Media generation: ${topic}`,
+                        mediaId,
+                        { media_id: mediaId, topic, duration, creditCost }
+                    );
+                    console.log(`[Worker] [${job.id}] 💳 Deducted ${creditCost} credits for User ${userId}`);
+                } catch (creditErr: any) {
+                    console.error(`[Worker] [${job.id}] ⚠️ Credit deduction failed:`, creditErr.message);
+                }
+            }
+        }
 
         console.log(`[Worker] ✨ Job ${job.id} completed successfully!`);
     } catch (error: any) {
