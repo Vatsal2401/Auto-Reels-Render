@@ -25,7 +25,8 @@ export class DbService {
       WHERE id = $5
     `;
         const completedAt = status === 'success' ? new Date() : null;
-        await this.client.query(query, [status, blobId, errorMessage, completedAt, stepId]);
+        const blobIdJson = blobId ? JSON.stringify(blobId) : null;
+        await this.client.query(query, [status, blobIdJson, errorMessage, completedAt, stepId]);
     }
 
     async addAsset(mediaId: string, type: string, blobId: string) {
