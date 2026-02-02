@@ -22,79 +22,100 @@ interface RenderJobPayload {
     };
 }
 
+const logMemory = (stage: string) => {
+    const mem = process.memoryUsage();
+    const toMB = (bytes: number) => (bytes / 1024 / 1024).toFixed(2);
+    console.log(`[Memory] ${stage} - RSS: ${toMB(mem.rss)}MB, Heap: ${toMB(mem.heapUsed)}/${toMB(mem.heapTotal)}MB`);
+};
+
+// Global services (pooled)
 const storage = new StorageService();
 const db = new DbService();
 const processor = new VideoProcessor();
 
 const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => {
     const { mediaId, stepId, userId, assets, options } = job.data;
-    console.log(`[Worker] Starting job ${job.id} for media ${mediaId}`);
+    const workDir = join(tmpdir(), `render-${job.id}`);
 
-    const sessionDir = join(tmpdir(), `render-worker-${job.id}`);
-    if (!existsSync(sessionDir)) mkdirSync(sessionDir, { recursive: true });
+    console.log(`[Worker] 🚀 Starting job ${job.id} for media ${mediaId} (User: ${userId})`);
+    logMemory('Job Start');
 
     try {
+        if (!existsSync(workDir)) {
+            mkdirSync(workDir, { recursive: true });
+        }
+
         // 1. Download Assets
-        console.log(`[Worker] Downloading assets...`);
-        const audioPath = join(sessionDir, 'audio.mp3');
-        const captionPath = join(sessionDir, 'captions.srt');
-        const imagePaths = assets.images.map((_, i) => join(sessionDir, `image-${i}.jpg`));
+        console.log(`[Worker] [${job.id}] 📥 Downloading assets to ${workDir}...`);
+        const audioPath = join(workDir, 'audio.mp3');
+        const captionPath = join(workDir, 'captions.srt');
+        const imagePaths = assets.images.map((_, i) => join(workDir, `image_${i}.jpg`));
 
         await Promise.all([
             storage.downloadToFile(assets.audio, audioPath),
             storage.downloadToFile(assets.caption, captionPath),
-            ...assets.images.map((id, i) => storage.downloadToFile(id!, imagePaths[i]!))
+            ...assets.images.map((id, i) => storage.downloadToFile(id, imagePaths[i]!))
         ]);
+        console.log(`[Worker] [${job.id}] ✅ Assets downloaded.`);
+        logMemory('Post-Download');
 
         // 2. Process Video
-        console.log(`[Worker] Processing video with preset ${options.preset}...`);
-        const outputPath = join(sessionDir, 'output.mp4');
+        console.log(`[Worker] [${job.id}] 🎬 Processing video with FFmpeg (preset: ${options.preset})...`);
+        const outputPath = join(workDir, 'output.mp4');
         await processor.process({
+            assetPaths: imagePaths,
             audioPath,
             captionPath,
-            assetPaths: imagePaths,
-            outputPath,
             preset: options.preset,
-            rendering_hints: options.rendering_hints
+            rendering_hints: options.rendering_hints,
+            outputPath
         });
+        console.log(`[Worker] [${job.id}] ✅ Video processed successfully.`);
+        logMemory('Post-Process');
 
         // 3. Upload Result
-        console.log(`[Worker] Uploading final video...`);
-        const blobId = `users/${userId}/media/${mediaId}/video/render/final_render.mp4`;
-        const videoStream = createReadStream(outputPath);
-        await storage.upload(blobId, videoStream);
+        console.log(`[Worker] [${job.id}] 📤 Uploading final video...`);
+        const resultBlobId = `users/${userId}/media/${mediaId}/video/render/final_render.mp4`;
+        await storage.upload(resultBlobId, createReadStream(outputPath));
 
         // 4. Update Database
-        console.log(`[Worker] Finalizing job in database...`);
-        await db.updateStepStatus(stepId, 'success', blobId);
-        await db.addAsset(mediaId, 'video', blobId);
+        console.log(`[Worker] [${job.id}] 💾 Finalizing job in database...`);
+        await db.addAsset(mediaId, 'video', resultBlobId);
+        await db.updateStepStatus(stepId, 'success', resultBlobId);
 
-        console.log(`[Worker] Job ${job.id} completed successfully!`);
+        console.log(`[Worker] ✨ Job ${job.id} completed successfully!`);
     } catch (error: any) {
-        console.error(`[Worker] Job ${job.id} failed:`, error);
-        await db.updateStepStatus(stepId, 'failed', undefined, error.message);
+        console.error(`[Worker] ❌ Job ${job.id} failed:`, error.message);
+        console.error(error.stack);
+        try {
+            await db.updateStepStatus(stepId, 'failed', undefined, error.message);
+        } catch (dbErr) {
+            console.error(`[Worker] 💀 Critical: Failed to update error status in DB:`, dbErr);
+        }
         throw error;
     } finally {
-        // 5. Cleanup
         try {
-            if (existsSync(sessionDir)) rmSync(sessionDir, { recursive: true, force: true });
-        } catch (e) {
-            console.error(`[Worker] Failed to cleanup session ${sessionDir}:`, e);
+            if (existsSync(workDir)) {
+                rmSync(workDir, { recursive: true, force: true });
+            }
+        } catch (cleanupErr) {
+            console.error(`[Worker] ⚠️ Cleanup failed for ${workDir}:`, cleanupErr);
         }
+        logMemory('Job Cleanup');
     }
 }, {
     connection: {
         url: process.env.REDIS_URL as string,
     },
-    concurrency: 1, // Mandatory constraint
+    concurrency: 1,
 });
 
 worker.on('ready', () => {
     console.log('🚀 Render Worker is ready and waiting for jobs...');
 });
 
-worker.on('failed', (job: Job<RenderJobPayload> | undefined, err: Error) => {
-    console.error(`Job ${job?.id} failed with error: ${err.message}`);
+worker.on('failed', (job, err) => {
+    console.error(`[Queue] Job ${job?.id} failed globally: ${err.message}`);
 });
 
 // Initialize DB connection

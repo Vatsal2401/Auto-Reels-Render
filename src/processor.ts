@@ -88,25 +88,34 @@ export class VideoProcessor {
             outputPath
         ];
 
-        console.log(`[Processor] Executing FFmpeg with command: ffmpeg ${args.join(' ')}`);
+        console.log(`[Processor] [FFmpeg] 🛠️ Command: ffmpeg ${args.join(' ')}`);
 
         return new Promise((resolve, reject) => {
             const ffmpeg = spawn('ffmpeg', args);
+            let stderrLogs = '';
 
             ffmpeg.stderr.on('data', (data) => {
-                // FFmpeg logs progress to stderr
-                // console.log(`[FFmpeg] ${data}`);
+                const chunk = data.toString();
+                stderrLogs += chunk;
+                // Optional: log progress lines only (too much noise otherwise)
+                if (chunk.includes('frame=')) {
+                    // console.log(`[FFmpeg Progress] ${chunk.trim()}`);
+                }
             });
 
             ffmpeg.on('close', (code) => {
                 if (code === 0) {
+                    console.log(`[Processor] [FFmpeg] ✅ Process finished successfully.`);
                     resolve();
                 } else {
-                    reject(new Error(`FFmpeg exited with code ${code}`));
+                    console.error(`[Processor] [FFmpeg] ❌ Process failed with code ${code}`);
+                    console.error(`[Processor] [FFmpeg] 📄 Last logs:\n${stderrLogs.slice(-2000)}`);
+                    reject(new Error(`FFmpeg exited with code ${code}. Check logs for details.`));
                 }
             });
 
             ffmpeg.on('error', (err) => {
+                console.error(`[Processor] [FFmpeg] 💥 Failed to start subprocess:`, err);
                 reject(err);
             });
         });
