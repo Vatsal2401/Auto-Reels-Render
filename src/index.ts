@@ -125,3 +125,18 @@ db.connect().then(() => {
     console.error('Database connection failed:', err);
     process.exit(1);
 });
+
+// Periodic Health Check Ping to Backend
+const API_BASE_URL = process.env.API_BASE_URL || 'https://ai-gen-reels-backend.onrender.com';
+setInterval(async () => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/health`);
+        if (response.ok) {
+            // console.log(`[Health] Ping to backend successful: ${response.status}`);
+        } else {
+            console.warn(`[Health] Ping to backend returned status: ${response.status}`);
+        }
+    } catch (error: any) {
+        console.error(`[Health] Failed to ping backend: ${error.message}`);
+    }
+}, 5000);
