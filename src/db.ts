@@ -31,8 +31,8 @@ export class DbService {
 
     async addAsset(mediaId: string, type: string, blobId: string) {
         const query = `
-      INSERT INTO media_assets (id, media_id, type, blob_storage_id, created_at, updated_at)
-      VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW())
+      INSERT INTO media_assets (id, media_id, type, blob_storage_id, created_at)
+      VALUES (gen_random_uuid(), $1, $2, $3, NOW())
     `;
         await this.client.query(query, [mediaId, type, blobId]);
     }
