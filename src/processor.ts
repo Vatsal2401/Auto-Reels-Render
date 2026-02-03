@@ -86,6 +86,7 @@ export class VideoProcessor {
         ];
 
         console.log(`[Processor] [FFmpeg] 🛠️ Command: ffmpeg ${args.join(' ')}`);
+        const startTime = Date.now();
 
         return new Promise((resolve, reject) => {
             const ffmpeg = spawn('ffmpeg', args);
@@ -101,8 +102,9 @@ export class VideoProcessor {
             });
 
             ffmpeg.on('close', (code) => {
+                const duration = ((Date.now() - startTime) / 1000).toFixed(2);
                 if (code === 0) {
-                    console.log(`[Processor] [FFmpeg] ✅ Process finished successfully.`);
+                    console.log(`[Processor] [FFmpeg] ✅ Process finished successfully in ${duration}s`);
                     resolve();
                 } else {
                     console.error(`[Processor] [FFmpeg] ❌ Process failed with code ${code}`);
