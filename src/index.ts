@@ -2,6 +2,7 @@ import { Worker, Job } from 'bullmq';
 import { StorageService } from './storage.js';
 import { DbService } from './db.js';
 import { VideoProcessor } from './processor.js';
+import { MailService } from './mail.js';
 import { join } from 'path';
 import { mkdirSync, rmSync, existsSync, createReadStream } from 'fs';
 import { tmpdir } from 'os';
@@ -40,6 +41,7 @@ const logMemory = (stage: string) => {
 const storage = new StorageService();
 const db = new DbService();
 const processor = new VideoProcessor();
+const mailer = new MailService();
 
 const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => {
     const { mediaId, stepId, userId, assets, options } = job.data;
@@ -107,6 +109,22 @@ const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => 
             const creditCost = (CREDIT_COSTS[duration] || CREDIT_COSTS.default) as number;
 
             await db.finalizeMedia(mediaId, resultBlobId);
+
+            // 6. Send Completion Email
+            if (mediaInfo.email) {
+                try {
+                    console.log(`[Worker] [${job.id}] 📧 Sending completion email to ${mediaInfo.email}...`);
+                    const signedUrl = await storage.getSignedUrl(resultBlobId);
+                    await mailer.sendRenderCompleteEmail(
+                        mediaInfo.email,
+                        signedUrl,
+                        topic,
+                        mediaInfo.name
+                    );
+                } catch (emailErr: any) {
+                    console.error(`[Worker] [${job.id}] ⚠️ Email sending failed:`, emailErr.message);
+                }
+            }
 
             if (userId) {
                 try {

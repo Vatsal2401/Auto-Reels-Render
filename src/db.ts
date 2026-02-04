@@ -50,7 +50,12 @@ export class DbService {
     }
 
     async getMediaInfo(mediaId: string) {
-        const query = `SELECT user_id, input_config FROM media WHERE id = $1`;
+        const query = `
+            SELECT m.user_id, m.input_config, u.email, u.name 
+            FROM media m
+            LEFT JOIN users u ON m.user_id = u.id
+            WHERE m.id = $1
+        `;
         const res = await this.client.query(query, [mediaId]);
         return res.rows[0];
     }

@@ -1,4 +1,5 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Upload } from '@aws-sdk/lib-storage';
 import { createWriteStream, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
@@ -62,5 +63,13 @@ export class StorageService {
             },
         });
         await upload.done();
+    }
+
+    async getSignedUrl(objectId: string, expiresIn: number = 3600): Promise<string> {
+        const command = new GetObjectCommand({
+            Bucket: this.bucketName,
+            Key: objectId,
+        });
+        return await getSignedUrl(this.s3Client, command, { expiresIn });
     }
 }
