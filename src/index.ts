@@ -15,6 +15,7 @@ interface RenderJobPayload {
         audio: string;
         caption: string;
         images: string[];
+        music?: string;
     };
     options: {
         preset: string;
@@ -55,13 +56,16 @@ const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => 
         // 1. Download Assets
         console.log(`[Worker] [${job.id}] 📥 Downloading assets to ${workDir}...`);
         const audioPath = join(workDir, 'audio.mp3');
-        const captionPath = join(workDir, 'captions.srt');
+        const captionExt = assets.caption.endsWith('.ass') ? 'ass' : 'srt';
+        const captionPath = join(workDir, `captions.${captionExt}`);
         const imagePaths = assets.images.map((_, i) => join(workDir, `image_${i}.jpg`));
+        const musicPath = assets.music ? join(workDir, 'music.mp3') : undefined;
 
         await Promise.all([
             storage.downloadToFile(assets.audio, audioPath),
             storage.downloadToFile(assets.caption, captionPath),
-            ...assets.images.map((id, i) => storage.downloadToFile(id, imagePaths[i]!))
+            ...assets.images.map((id, i) => storage.downloadToFile(id, imagePaths[i]!)),
+            ...(assets.music && musicPath ? [storage.downloadToFile(assets.music, musicPath)] : [])
         ]);
         console.log(`[Worker] [${job.id}] ✅ Assets downloaded.`);
         logMemory('Post-Download');
@@ -75,7 +79,9 @@ const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => 
             captionPath,
             preset: options.preset,
             rendering_hints: options.rendering_hints,
-            outputPath
+            outputPath,
+            musicPath,
+            musicVolume: options.rendering_hints?.musicVolume
         });
         console.log(`[Worker] [${job.id}] ✅ Video processed successfully.`);
         logMemory('Post-Process');

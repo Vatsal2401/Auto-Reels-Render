@@ -10,11 +10,13 @@ export interface RenderOptions {
     outputPath: string;
     preset: string;
     rendering_hints?: any;
+    musicPath?: string;
+    musicVolume?: number;
 }
 
 export class VideoProcessor {
     async process(options: RenderOptions): Promise<void> {
-        const { audioPath, captionPath, assetPaths, outputPath, preset, rendering_hints } = options;
+        const { audioPath, captionPath, assetPaths, outputPath, preset, rendering_hints, musicPath, musicVolume } = options;
 
         const audioDuration = await this.getMediaDuration(audioPath);
         const imageCount = assetPaths.length || 1;
@@ -67,15 +69,16 @@ export class VideoProcessor {
 
         if (enabled && captionPath) {
             const isAss = captionPath.endsWith('.ass');
+            const escapedPath = this.escapeFilterPath(captionPath);
             if (isAss) {
                 // ASS handles styles internally
                 complexFilters.push(
-                    `[v_merged_raw]ass='${captionPath}'[v_final]`
+                    `[v_merged_raw]ass='${escapedPath}'[v_final]`
                 );
             } else {
                 const style = this.getCaptionStyle(captionsConfig.preset, captionsConfig.position);
                 complexFilters.push(
-                    `[v_merged_raw]subtitles='${captionPath}':force_style='${style}'[v_final]`
+                    `[v_merged_raw]subtitles='${escapedPath}':force_style='${style}'[v_final]`
                 );
             }
         } else {
@@ -83,14 +86,29 @@ export class VideoProcessor {
             complexFilters.push(`[v_merged_raw]copy[v_final]`);
         }
 
-        const audioIndex = assetPaths.length;
+        // 4. Audio Mixing
+        const voIndex = assetPaths.length;
+        const musicIndex = voIndex + 1;
+        let finalAudioMap = `${voIndex}:a`;
+
+        if (musicPath) {
+            const bgVol = musicVolume !== undefined ? musicVolume : 0.2;
+            complexFilters.push(
+                `[${voIndex}:a]volume=1.0[vo];` +
+                `[${musicIndex}:a]volume=${bgVol}[bg];` +
+                `[vo][bg]amix=inputs=2:duration=first:dropout_transition=2[a_final]`
+            );
+            finalAudioMap = '[a_final]';
+        }
+
         const args = [
             '-y',
             ...assetPaths.flatMap(p => ['-i', p]),
             '-i', audioPath,
+            ...(musicPath ? ['-i', musicPath] : []),
             '-filter_complex', complexFilters.join(';'),
             '-map', '[v_final]',
-            '-map', `${audioIndex}:a`,
+            '-map', finalAudioMap,
             '-c:v', 'libx264',
             '-preset', preset,
             '-crf', '23',
@@ -171,30 +189,46 @@ export class VideoProcessor {
         return effects[Math.floor(Math.random() * effects.length)]!;
     }
 
+    private escapeFilterPath(path: string): string {
+        return path
+            .replace(/\\/g, '/')
+            .replace(/:/g, '\\:')
+            .replace(/'/g, "'\\\\\\''"); // Triple-escaped for FFmpeg's filter parser
+    }
+
     private getCaptionStyle(preset: string = 'clean-minimal', position: string = 'bottom'): string {
         // Base Alignment
-        // 2 = Bottom Center, 6 = Top Center
-        const alignment = position === 'top' ? 6 : 2;
-        const marginV = position === 'top' ? 60 : 50;
+        // 2 = Bottom Center, 5 = Middle Center, 6 = Top Center
+        const alignment = position === 'top' ? 8 : position === 'center' ? 5 : 2;
+        const marginV = position === 'top' ? 100 : position === 'center' ? 50 : 150;
 
         let style = `Alignment=${alignment},MarginV=${marginV}`;
 
-        switch (preset) {
-            case 'bold-highlight': // Yellow text, thick black outline
-                style += `,FontName=Arial Black,FontSize=18,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=3,Shadow=0,Bold=1`;
+        switch (preset.toLowerCase()) {
+            case 'bold-stroke':
+                style += `,FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF,SecondaryColour=&H000000FF,OutlineColour=&H000000,BorderStyle=1,Outline=4,Shadow=0,Bold=1`;
                 break;
-            case 'cinematic': // Serif, Letter Spacing, smaller
-                style += `,FontName=Times New Roman,FontSize=14,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=1,Shadow=1,Spacing=1,Bold=0`;
+            case 'red-highlight':
+                style += `,FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF,SecondaryColour=&H000000FF,OutlineColour=&H000000FF,BorderStyle=1,Outline=4,Shadow=1,Bold=1`;
                 break;
-            case 'viral-pop': // Green text, very punchy
-                style += `,FontName=Arial Black,FontSize=20,PrimaryColour=&H00FF00,OutlineColour=&H000000,BorderStyle=1,Outline=4,Shadow=2,Bold=1`;
+            case 'sleek':
+                style += `,FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,SecondaryColour=&H00FFA500,BackColour=&H00FFFFFF,BorderStyle=1,Outline=0,Shadow=3,Bold=0`;
                 break;
-            case 'subtitle-classic': // Opaque box background
-                style += `,FontName=Arial,FontSize=16,PrimaryColour=&HFFFFFF,BackColour=&H80000000,BorderStyle=3,Outline=0,Shadow=0,Bold=0`;
+            case 'karaoke-card':
+                style += `,FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,SecondaryColour=&H00FF00FF,BackColour=&H00FF00FF,BorderStyle=3,Outline=0,Shadow=0,Bold=1`;
+                break;
+            case 'majestic':
+                style += `,FontName=DejaVu Sans,FontSize=20,PrimaryColour=&H00FFFFFF,SecondaryColour=&H00FF00FF,OutlineColour=&H000000,BorderStyle=1,Outline=1,Shadow=4,Bold=1`;
+                break;
+            case 'beast':
+                style += `,FontName=DejaVu Sans,FontSize=20,PrimaryColour=&H00FFFFFF,SecondaryColour=&H000000FF,OutlineColour=&H000000,BorderStyle=1,Outline=5,Shadow=0,Bold=1,Italic=1`;
+                break;
+            case 'elegant':
+                style += `,FontName=DejaVu Serif,FontSize=14,PrimaryColour=&H00FFFFFF,SecondaryColour=&H00FFCCCC,OutlineColour=&H000000,BorderStyle=1,Outline=0,Shadow=1,Bold=0`;
                 break;
             case 'clean-minimal':
-            default: // White, thin shadow/outline
-                style += `,FontName=Arial,FontSize=16,PrimaryColour=&HFFFFFF,OutlineColour=&H80000000,BorderStyle=1,Outline=1,Shadow=1,Bold=1`;
+            default:
+                style += `,FontName=Arial,FontSize=16,PrimaryColour=&HFFFFFF,SecondaryColour=&H000000FF,OutlineColour=&H80000000,BorderStyle=1,Outline=1,Shadow=1,Bold=1`;
                 break;
         }
 
