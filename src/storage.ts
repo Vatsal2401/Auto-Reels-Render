@@ -38,9 +38,11 @@ export class StorageService {
     }
 
     async downloadToFile(objectId: string, targetPath: string): Promise<void> {
+        // Decode the object key in case it comes URL encoded
+        const decodedKey = decodeURIComponent(objectId);
         const command = new GetObjectCommand({
             Bucket: this.bucketName,
-            Key: objectId,
+            Key: decodedKey,
         });
         const response = await this.s3Client.send(command);
 
