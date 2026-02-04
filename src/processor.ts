@@ -62,9 +62,26 @@ export class VideoProcessor {
         }
 
         // 3. Captions
-        complexFilters.push(
-            `[v_merged_raw]subtitles='${captionPath}':force_style='FontSize=16,PrimaryColour=&Hffffff,OutlineColour=&H000000,BorderStyle=1,Outline=1,Shadow=0,Bold=1,Alignment=2,MarginV=50'[v_final]`
-        );
+        const captionsConfig = rendering_hints?.captions || {};
+        const enabled = captionsConfig.enabled !== false;
+
+        if (enabled && captionPath) {
+            const isAss = captionPath.endsWith('.ass');
+            if (isAss) {
+                // ASS handles styles internally
+                complexFilters.push(
+                    `[v_merged_raw]ass='${captionPath}'[v_final]`
+                );
+            } else {
+                const style = this.getCaptionStyle(captionsConfig.preset, captionsConfig.position);
+                complexFilters.push(
+                    `[v_merged_raw]subtitles='${captionPath}':force_style='${style}'[v_final]`
+                );
+            }
+        } else {
+            // Bypass captions if disabled or missing
+            complexFilters.push(`[v_merged_raw]copy[v_final]`);
+        }
 
         const audioIndex = assetPaths.length;
         const args = [
@@ -152,5 +169,35 @@ export class VideoProcessor {
             "z=1.2:x='if(eq(on,1),iw-iw/zoom,max(x-1,0))':y='(ih-ih/zoom)/2':",
         ];
         return effects[Math.floor(Math.random() * effects.length)]!;
+    }
+
+    private getCaptionStyle(preset: string = 'clean-minimal', position: string = 'bottom'): string {
+        // Base Alignment
+        // 2 = Bottom Center, 6 = Top Center
+        const alignment = position === 'top' ? 6 : 2;
+        const marginV = position === 'top' ? 60 : 50;
+
+        let style = `Alignment=${alignment},MarginV=${marginV}`;
+
+        switch (preset) {
+            case 'bold-highlight': // Yellow text, thick black outline
+                style += `,FontName=Arial Black,FontSize=18,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=3,Shadow=0,Bold=1`;
+                break;
+            case 'cinematic': // Serif, Letter Spacing, smaller
+                style += `,FontName=Times New Roman,FontSize=14,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=1,Outline=1,Shadow=1,Spacing=1,Bold=0`;
+                break;
+            case 'viral-pop': // Green text, very punchy
+                style += `,FontName=Arial Black,FontSize=20,PrimaryColour=&H00FF00,OutlineColour=&H000000,BorderStyle=1,Outline=4,Shadow=2,Bold=1`;
+                break;
+            case 'subtitle-classic': // Opaque box background
+                style += `,FontName=Arial,FontSize=16,PrimaryColour=&HFFFFFF,BackColour=&H80000000,BorderStyle=3,Outline=0,Shadow=0,Bold=0`;
+                break;
+            case 'clean-minimal':
+            default: // White, thin shadow/outline
+                style += `,FontName=Arial,FontSize=16,PrimaryColour=&HFFFFFF,OutlineColour=&H80000000,BorderStyle=1,Outline=1,Shadow=1,Bold=1`;
+                break;
+        }
+
+        return style;
     }
 }
