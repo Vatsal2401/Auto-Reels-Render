@@ -1,4 +1,4 @@
-import { VideoProcessor } from './processor';
+import { VideoProcessor } from './processor.js';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
@@ -33,8 +33,8 @@ async function main() {
         rendering_hints: {
             pacing: 'fast',
             captions: {
-                preset: 'bold-stroke',
-                position: 'bottom'
+                preset: 'beast',
+                position: 'top'
             }
         }
     });

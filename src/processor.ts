@@ -1,7 +1,8 @@
 import { spawn } from 'child_process';
 import { join } from 'path';
-import { createReadStream, readFileSync } from 'fs';
+import { createReadStream, readFileSync, writeFileSync } from 'fs';
 import { Readable } from 'stream';
+import { AssGenerator } from './ass-generator.js';
 
 export interface RenderOptions {
     audioPath: string;
@@ -42,7 +43,7 @@ export class VideoProcessor {
                 `[${i}:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1,` +
                 `zoompan=${effect}d=${frames}:s=720x1280:fps=25[v${i}]`
             );
-            videoStreams.push(`v${i}`);
+            videoStreams.push(`v${i} `);
         });
 
         // 2. XFade Transitions
@@ -72,37 +73,21 @@ export class VideoProcessor {
 
             if (isJson) {
                 const captions = JSON.parse(readFileSync(captionPath).toString());
-                let currentStream = 'v_merged_raw';
 
-                // --- DYNAMIC PLACEMENT & STYLING ---
-                // Vertical alignment based on rendering_hints.captions.position
-                // Supported: 'top', 'center', 'bottom' (default: 'bottom')
-                const position = captionsConfig.position || 'bottom';
-                let yCoord = 'h*0.8'; // Default bottom
+                // --- ASS SUBTITLE GENERATION (True Karaoke) ---
+                const assPath = captionPath.replace('.json', '.ass');
+                const assContent = AssGenerator.generate(captions, captionsConfig.preset || 'karaoke-card', captionsConfig.position || 'bottom');
+                writeFileSync(assPath, assContent);
 
-                if (position === 'top') {
-                    yCoord = 'h*0.1';
-                } else if (position === 'center') {
-                    yCoord = '(h-text_h)/2';
-                }
+                const escapedAssPath = this.escapeFilterPath(assPath);
 
-                // Aesthetic Preset Selection
-                const presetName = captionsConfig.preset || 'clean-minimal';
-                const styleParams = this.getDrawtextStyle(presetName);
+                // Use subtitles filter directly on the stream
+                // Note: Pop-in animation is harder in pure ASS without VSFilterMod, so we rely on Karaoke Highlights for motion
+                complexFilters.push(
+                    `[v_merged_raw]subtitles = '${escapedAssPath}'[v_final]`
+                );
 
-                captions.forEach((cap: any, idx: number) => {
-                    const nextStream = idx === captions.length - 1 ? 'v_final' : `cap${idx}`;
-                    // Apply mapped aesthetic + position
-                    complexFilters.push(
-                        `[${currentStream}]drawtext=enable='between(t,${cap.start},${cap.end})':` +
-                        `text='${this.escapeFilterPath(cap.text)}':${styleParams}:` +
-                        `x=(w-text_w)/2:y=${yCoord}[${nextStream}]`
-                    );
-                    currentStream = nextStream;
-                });
-                if (captions.length === 0) {
-                    complexFilters.push(`[v_merged_raw]copy[v_final]`);
-                }
+                // No loop needed, subtitles filter handles the whole file
             } else {
                 // Backward compatibility for legacy ASS/SRT files
                 const escapedPath = this.escapeFilterPath(captionPath);
@@ -147,7 +132,7 @@ export class VideoProcessor {
             outputPath
         ];
 
-        console.log(`[Processor] [FFmpeg] 🛠️ Command: ffmpeg ${args.join(' ')}`);
+        console.log(`[Processor][FFmpeg] 🛠️ Command: ffmpeg ${args.join(' ')} `);
         const startTime = Date.now();
 
         return new Promise((resolve, reject) => {
@@ -159,24 +144,24 @@ export class VideoProcessor {
                 stderrLogs += chunk;
                 // Optional: log progress lines only (too much noise otherwise)
                 if (chunk.includes('frame=')) {
-                    // console.log(`[FFmpeg Progress] ${chunk.trim()}`);
+                    // console.log(`[FFmpeg Progress] ${ chunk.trim() } `);
                 }
             });
 
             ffmpeg.on('close', (code) => {
                 const duration = ((Date.now() - startTime) / 1000).toFixed(2);
                 if (code === 0) {
-                    console.log(`[Processor] [FFmpeg] ✅ Process finished successfully in ${duration}s`);
+                    console.log(`[Processor][FFmpeg] ✅ Process finished successfully in ${duration} s`);
                     resolve();
                 } else {
-                    console.error(`[Processor] [FFmpeg] ❌ Process failed with code ${code}`);
-                    console.error(`[Processor] [FFmpeg] 📄 Last logs:\n${stderrLogs.slice(-2000)}`);
+                    console.error(`[Processor][FFmpeg] ❌ Process failed with code ${code} `);
+                    console.error(`[Processor][FFmpeg] 📄 Last logs: \n${stderrLogs.slice(-2000)} `);
                     reject(new Error(`FFmpeg exited with code ${code}. Check logs for details.`));
                 }
             });
 
             ffmpeg.on('error', (err) => {
-                console.error(`[Processor] [FFmpeg] 💥 Failed to start subprocess:`, err);
+                console.error(`[Processor][FFmpeg] 💥 Failed to start subprocess: `, err);
                 reject(err);
             });
         });
@@ -222,69 +207,7 @@ export class VideoProcessor {
             .replace(/:/g, '\\:')
             .replace(/'/g, "'\\\\\\''"); // Triple-escaped for FFmpeg's filter parser
     }
-
-    private getDrawtextStyle(preset: string = 'clean-minimal'): string {
-        // Translation from UI presets to FFmpeg drawtext parameters
-        // Note: Fontsize is locked at 32 as per absolute consistency requirement
-        switch (preset.toLowerCase()) {
-            case 'bold-stroke':
-                return 'fontsize=32:fontcolor=white:borderw=4:bordercolor=black';
-            case 'red-highlight':
-                return 'fontsize=32:fontcolor=white:borderw=4:bordercolor=red:shadowx=1:shadowy=1';
-            case 'sleek':
-                return 'fontsize=32:fontcolor=white:shadowx=2:shadowy=2:shadowcolor=black@0.5';
-            case 'karaoke-card':
-                // Box background effect (boxborderw replaced with box=1:boxcolor=...)
-                return 'fontsize=32:fontcolor=white:box=1:boxcolor=magenta@0.8:boxborderw=5';
-            case 'majestic':
-                return 'fontsize=32:fontcolor=white:borderw=1:bordercolor=black:shadowx=4:shadowy=4';
-            case 'beast':
-                return 'fontsize=32:fontcolor=white:borderw=5:bordercolor=black';
-            case 'elegant':
-                return 'fontsize=32:fontcolor=white:shadowx=1:shadowy=1';
-            case 'clean-minimal':
-            default:
-                return 'fontsize=32:fontcolor=white:borderw=2:bordercolor=black@0.5:shadowx=1:shadowy=1';
-        }
-    }
-
-    private getCaptionStyle(preset: string = 'clean-minimal', position: string = 'bottom'): string {
-        // Base Alignment
-        // 2 = Bottom Center, 5 = Middle Center, 8 = Top Center
-        const alignment = position === 'top' ? 8 : position === 'center' ? 5 : 2;
-        const marginV = position === 'top' ? 100 : position === 'center' ? 50 : 150;
-
-        let style = `Alignment=${alignment},MarginV=${marginV}`;
-
-        switch (preset.toLowerCase()) {
-            case 'bold-stroke':
-                style += `,FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF,SecondaryColour=&H000000FF,OutlineColour=&H000000,BorderStyle=1,Outline=4,Shadow=0,Bold=1`;
-                break;
-            case 'red-highlight':
-                style += `,FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF,SecondaryColour=&H000000FF,OutlineColour=&H000000FF,BorderStyle=1,Outline=4,Shadow=1,Bold=1`;
-                break;
-            case 'sleek':
-                style += `,FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,SecondaryColour=&H00FFA500,BackColour=&H00FFFFFF,BorderStyle=1,Outline=0,Shadow=3,Bold=0`;
-                break;
-            case 'karaoke-card':
-                // Box background (BorderStyle=3)
-                style += `,FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,SecondaryColour=&H00FF00FF,BackColour=&H00FF00FF,BorderStyle=3,Outline=0,Shadow=0,Bold=1`;
-                break;
-            case 'beast':
-                style += `,FontName=DejaVu Sans,FontSize=20,PrimaryColour=&H00FFFFFF,SecondaryColour=&H000000FF,OutlineColour=&H000000,BorderStyle=1,Outline=5,Shadow=0,Bold=1,Italic=1`;
-                break;
-            case 'majestic':
-                style += `,FontName=DejaVu Sans,FontSize=20,PrimaryColour=&H00FFFFFF,SecondaryColour=&H00FF00FF,OutlineColour=&H000000,BorderStyle=1,Outline=1,Shadow=4,Bold=1`;
-                break;
-            case 'elegant':
-                style += `,FontName=DejaVu Serif,FontSize=14,PrimaryColour=&H00FFFFFF,SecondaryColour=&H00FFCCCC,OutlineColour=&H000000,BorderStyle=1,Outline=0,Shadow=1,Bold=0`;
-                break;
-            case 'clean-minimal':
-            default:
-                style += `,FontName=Arial,FontSize=16,PrimaryColour=&HFFFFFF,SecondaryColour=&H000000FF,OutlineColour=&H80000000,BorderStyle=1,Outline=1,Shadow=1,Bold=1`;
-                break;
-        }
-
-        return style;
-    }
 }
+
+
+
