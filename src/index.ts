@@ -58,7 +58,7 @@ const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => 
         // 1. Download Assets
         console.log(`[Worker] [${job.id}] 📥 Downloading assets to ${workDir}...`);
         const audioPath = join(workDir, 'audio.mp3');
-        const captionExt = assets.caption.endsWith('.ass') ? 'ass' : 'srt';
+        const captionExt = assets.caption.endsWith('.ass') ? 'ass' : assets.caption.endsWith('.json') ? 'json' : 'srt';
         const captionPath = join(workDir, `captions.${captionExt}`);
         const imagePaths = assets.images.map((_, i) => join(workDir, `image_${i}.jpg`));
         const musicPath = assets.music ? join(workDir, 'music.mp3') : undefined;
