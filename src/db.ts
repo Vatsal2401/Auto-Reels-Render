@@ -1,18 +1,27 @@
-import { Client } from 'pg';
+import { Pool } from 'pg';
 import 'dotenv/config';
 
 export class DbService {
-    private client: Client;
+    private pool: Pool;
 
     constructor() {
-        this.client = new Client({
+        this.pool = new Pool({
             connectionString: process.env.DATABASE_URL,
             ssl: { rejectUnauthorized: false },
+            max: 5, // Max clients in the pool
+            idleTimeoutMillis: 30000,
+        });
+
+        this.pool.on('error', (err) => {
+            console.error('Unexpected error on idle client', err);
+            // Don't exit, pool handles this
         });
     }
 
     async connect() {
-        await this.client.connect();
+        // Pool connects lazily, but let's test it
+        const client = await this.pool.connect();
+        client.release();
     }
 
     async updateStepStatus(stepId: string, status: string, blobId?: string | string[], errorMessage?: string) {
@@ -26,7 +35,7 @@ export class DbService {
     `;
         const completedAt = status === 'success' ? new Date() : null;
         const blobIdJson = blobId ? JSON.stringify(blobId) : null;
-        await this.client.query(query, [status, blobIdJson, errorMessage, completedAt, stepId]);
+        await this.pool.query(query, [status, blobIdJson, errorMessage, completedAt, stepId]);
     }
 
     async addAsset(mediaId: string, type: string, blobId: string) {
@@ -34,7 +43,7 @@ export class DbService {
       INSERT INTO media_assets (id, media_id, type, blob_storage_id, created_at)
       VALUES (gen_random_uuid(), $1, $2, $3, NOW())
     `;
-        await this.client.query(query, [mediaId, type, blobId]);
+        await this.pool.query(query, [mediaId, type, blobId]);
     }
 
     async finalizeMedia(mediaId: string, resultBlobId: string) {
@@ -46,7 +55,7 @@ export class DbService {
           updated_at = NOW()
       WHERE id = $2
     `;
-        await this.client.query(query, [resultBlobId, mediaId]);
+        await this.pool.query(query, [resultBlobId, mediaId]);
     }
 
     async getMediaInfo(mediaId: string) {
@@ -56,13 +65,13 @@ export class DbService {
             LEFT JOIN users u ON m.user_id = u.id
             WHERE m.id = $1
         `;
-        const res = await this.client.query(query, [mediaId]);
+        const res = await this.pool.query(query, [mediaId]);
         return res.rows[0];
     }
 
     async deductCredits(userId: string, amount: number, description: string, referenceId: string, metadata?: any) {
         // 1. Get current balance
-        const userRes = await this.client.query('SELECT credits_balance FROM users WHERE id = $1 FOR UPDATE', [userId]);
+        const userRes = await this.pool.query('SELECT credits_balance FROM users WHERE id = $1 FOR UPDATE', [userId]);
         if (userRes.rowCount === 0) throw new Error('User not found');
         const currentBalance = userRes.rows[0].credits_balance;
 
@@ -73,17 +82,17 @@ export class DbService {
         const newBalance = currentBalance - amount;
 
         // 2. Update balance
-        await this.client.query('UPDATE users SET credits_balance = $1 WHERE id = $2', [newBalance, userId]);
+        await this.pool.query('UPDATE users SET credits_balance = $1 WHERE id = $2', [newBalance, userId]);
 
         // 3. Create transaction
         const txQuery = `
       INSERT INTO credit_transactions (id, user_id, transaction_type, amount, balance_after, description, reference_id, metadata, created_at)
       VALUES (gen_random_uuid(), $1, 'deduction', $2, $3, $4, $5, $6, NOW())
     `;
-        await this.client.query(txQuery, [userId, -amount, newBalance, description, referenceId, metadata ? JSON.stringify(metadata) : null]);
+        await this.pool.query(txQuery, [userId, -amount, newBalance, description, referenceId, metadata ? JSON.stringify(metadata) : null]);
     }
 
     async disconnect() {
-        await this.client.end();
+        await this.pool.end();
     }
 }
