@@ -1,0 +1,58 @@
+name: Render Worker Deployment
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Project
+        run: npm run build
+
+      - name: Setup SSH Agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+
+      - name: Prepare SSH variables
+        run: |
+          echo "HOST=$(echo '${{ secrets.GCP_VM_HOST }}' | tr -d '\r\n')" >> $GITHUB_ENV
+          echo "USER=$(echo '${{ secrets.GCP_VM_USER }}' | tr -d '\r\n')" >> $GITHUB_ENV
+
+      - name: Ensure target directory exists
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+            $USER@$HOST \
+            "mkdir -p /home/$USER/backend-infra/render-worker"
+
+      - name: Copy build to VM
+        run: |
+          scp -o StrictHostKeyChecking=no -r \
+            dist package.json package-lock.json \
+            $USER@$HOST:/home/$USER/backend-infra/render-worker
+
+      - name: Deploy and restart
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+            $USER@$HOST << 'EOF'
+              cd /home/$USER/backend-infra/render-worker
+              npm ci --omit=dev
+              pm2 restart render-worker || pm2 start dist/index.js --name render-worker
+              pm2 save
+          EOF
