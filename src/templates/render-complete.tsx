@@ -30,20 +30,26 @@ export const RenderCompleteEmail = ({
       <Container style={container}>
         <Heading style={h1}>Your Video is Ready!</Heading>
         <Text style={text}>Hi {userFirstname},</Text>
-        <Text style={text}>
-          Great news! Your video about <strong>"{topic}"</strong> has finished rendering and is now
-          available to download or share.
-        </Text>
+        <Text style={text}>Great news! Your video generation has finished successfully.</Text>
+
+        {topic && (
+          <Section style={quoteContainer}>
+            <Text style={quoteText}>"{topic}"</Text>
+          </Section>
+        )}
+
+        <Text style={text}>It is now available to download or share.</Text>
+
         <Section style={btnContainer}>
           <Button style={button} href={videoUrl}>
             View Your Video
           </Button>
         </Section>
         <Text style={text}>
-          Or copy and paste this link in your browser:
+          Or use this direct link:
           <br />
           <a href={videoUrl} style={link}>
-            {videoUrl}
+            Click here to watch
           </a>
         </Text>
         <Hr style={hr} />
@@ -66,6 +72,8 @@ const container = {
   margin: '0 auto',
   padding: '20px 0 48px',
   marginBottom: '64px',
+  borderRadius: '8px',
+  boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
 };
 
 const h1 = {
@@ -82,6 +90,23 @@ const text = {
   lineHeight: '24px',
   textAlign: 'left' as const,
   padding: '0 40px',
+  marginBottom: '16px',
+};
+
+const quoteContainer = {
+  backgroundColor: '#f9fafb',
+  borderLeft: '4px solid #4f46e5',
+  margin: '0 40px 24px 40px',
+  padding: '16px 20px',
+  borderRadius: '4px',
+};
+
+const quoteText = {
+  color: '#4b5563',
+  fontSize: '15px',
+  fontStyle: 'italic',
+  lineHeight: '24px',
+  margin: '0',
 };
 
 const btnContainer = {
@@ -91,25 +116,26 @@ const btnContainer = {
 
 const button = {
   backgroundColor: '#4f46e5',
-  borderRadius: '5px',
+  borderRadius: '6px',
   color: '#fff',
   fontSize: '16px',
-  fontWeight: 'bold',
+  fontWeight: '600',
   textDecoration: 'none',
   textAlign: 'center' as const,
   display: 'inline-block',
-  width: '200px',
-  padding: '14px 7px',
+  padding: '12px 24px',
+  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
 };
 
 const link = {
   color: '#4f46e5',
   textDecoration: 'underline',
+  fontSize: '14px',
 };
 
 const hr = {
   borderColor: '#e6ebf1',
-  margin: '20px 0',
+  margin: '32px 0 20px',
 };
 
 const footer = {
