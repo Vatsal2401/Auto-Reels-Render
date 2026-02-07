@@ -110,9 +110,17 @@ export class VideoProcessor {
         if (musicPath) {
             const bgVol = musicVolume !== undefined ? musicVolume : 0.2;
             complexFilters.push(
-                `[${voIndex}:a]volume=1.0[vo];` +
-                `[${musicIndex}:a]volume=${bgVol}[bg];` +
-                `[vo][bg]amix=inputs=2:duration=first:dropout_transition=2[a_final]`
+                // Split VO: one for output (clean), one for sidechain trigger
+                `[${voIndex}:a]volume=1.0,asplit[vo_clean][vo_trigger];` +
+                // Prepare BG Music: Loop is handled by input flag, just set volume
+                `[${musicIndex}:a]volume=${bgVol}[bg_raw];` +
+                // Sidechain Ducking: Compress BG when VO is active
+                // threshold: reduce when VO > 0.05
+                // ratio: 4:1 reduction
+                // release: 200ms recovery time
+                `[bg_raw][vo_trigger]sidechaincompress=threshold=0.05:ratio=4:attack=5:release=200[bg_ducked];` +
+                // Mix clean VO and ducked BG
+                `[vo_clean][bg_ducked]amix=inputs=2:duration=first:dropout_transition=0[a_final]`
             );
             finalAudioMap = '[a_final]';
         }
@@ -121,7 +129,7 @@ export class VideoProcessor {
             '-y',
             ...assetPaths.flatMap(p => ['-i', p]),
             '-i', audioPath,
-            ...(musicPath ? ['-i', musicPath] : []),
+            ...(musicPath ? ['-stream_loop', '-1', '-i', musicPath] : []),
             '-filter_complex', complexFilters.join(';'),
             '-map', '[v_final]',
             '-map', finalAudioMap,
