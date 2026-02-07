@@ -166,7 +166,7 @@ const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => 
     connection: {
         url: process.env.REDIS_URL as string,
     },
-    concurrency: 1,
+    concurrency: 2,
 });
 
 worker.on('ready', () => {

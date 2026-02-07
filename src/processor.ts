@@ -13,11 +13,15 @@ export interface RenderOptions {
     rendering_hints?: any;
     musicPath?: string;
     musicVolume?: number;
+    width?: number;
+    height?: number;
 }
 
 export class VideoProcessor {
     async process(options: RenderOptions): Promise<void> {
         const { audioPath, captionPath, assetPaths, outputPath, preset, rendering_hints, musicPath, musicVolume } = options;
+        const width = rendering_hints?.width || 720;
+        const height = rendering_hints?.height || 1280;
 
         const audioDuration = await this.getMediaDuration(audioPath);
         const imageCount = assetPaths.length || 1;
@@ -40,8 +44,8 @@ export class VideoProcessor {
             const effect = this.getRandomKenBurnsEffect();
             const frames = Math.ceil((slideDuration + transitionDuration) * 25);
             complexFilters.push(
-                `[${i}:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1,` +
-                `zoompan=${effect}d=${frames}:s=720x1280:fps=25[v${i}]`
+                `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,` +
+                `zoompan=${effect}d=${frames}:s=${width}x${height}:fps=25[v${i}]`
             );
             videoStreams.push(`v${i} `);
         });
