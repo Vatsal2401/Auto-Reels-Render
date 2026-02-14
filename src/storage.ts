@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Upload } from '@aws-sdk/lib-storage';
 import { createWriteStream, existsSync, mkdirSync } from 'fs';
@@ -73,5 +73,21 @@ export class StorageService {
             Key: objectId,
         });
         return await getSignedUrl(this.s3Client, command, { expiresIn });
+    }
+
+    /** Returns true if the object exists (so we can skip music when it was stored in another backend e.g. Supabase). */
+    async objectExists(objectId: string): Promise<boolean> {
+        const decodedKey = decodeURIComponent(objectId);
+        try {
+            await this.s3Client.send(new HeadObjectCommand({
+                Bucket: this.bucketName,
+                Key: decodedKey,
+            }));
+            return true;
+        } catch (err: unknown) {
+            const code = (err as { name?: string }).name;
+            if (code === 'NotFound' || code === '404') return false;
+            throw err;
+        }
     }
 }
