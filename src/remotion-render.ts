@@ -312,9 +312,9 @@ export async function runRemotionRender(params: RemotionRenderParams): Promise<s
                     break;
                 }
             }
-            if (!response!.ok) {
+            if (!response || !response.ok) {
                 throw new Error(
-                    `Failed to download render: ${response!.status}. ` +
+                    `Failed to download render: ${response?.status ?? 'unknown'}. ` +
                     `Ensure your AWS user has s3:GetObject on the Remotion bucket (${bucketName}).`
                 );
             }
