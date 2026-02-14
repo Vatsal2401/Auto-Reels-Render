@@ -3,12 +3,15 @@ import { StorageService } from './storage.js';
 import { DbService } from './db.js';
 import { VideoProcessor } from './processor.js';
 import { MailService } from './mail.js';
+import { finalizeRenderSuccess } from './finalize.js';
+import { runRemotionRender } from './remotion-render.js';
+import type { RemotionJobPayload } from './remotion-render.js';
 import { join } from 'path';
 import { mkdirSync, rmSync, existsSync, createReadStream } from 'fs';
 import { tmpdir } from 'os';
 import 'dotenv/config';
 
-interface RenderJobPayload {
+export interface RenderJobPayload {
     mediaId: string;
     stepId: string;
     userId: string;
@@ -20,16 +23,9 @@ interface RenderJobPayload {
     };
     options: {
         preset: string;
-        rendering_hints?: any;
+        rendering_hints?: Record<string, unknown>;
     };
 }
-
-const CREDIT_COSTS: Record<string, number> = {
-    '30-60': 1,
-    '60-90': 2,
-    '90-120': 3,
-    default: 1,
-};
 
 const logMemory = (stage: string) => {
     const mem = process.memoryUsage();
@@ -83,7 +79,7 @@ const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => 
             rendering_hints: options.rendering_hints,
             outputPath,
             musicPath,
-            musicVolume: options.rendering_hints?.musicVolume
+            musicVolume: typeof options.rendering_hints?.musicVolume === 'number' ? options.rendering_hints.musicVolume : undefined
         });
         console.log(`[Worker] [${job.id}] ✅ Video processed successfully.`);
         logMemory('Post-Process');
@@ -93,54 +89,16 @@ const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => 
         const resultBlobId = `users/${userId}/media/${mediaId}/video/render/final_render.mp4`;
         await storage.upload(resultBlobId, createReadStream(outputPath));
 
-        // 4. Update Database (Step)
-        console.log(`[Worker] [${job.id}] 💾 Finalizing step in database...`);
-        await db.updateStepStatus(stepId, 'success', resultBlobId);
-
-        // 5. Finalize Media & Deduct Credits
-        console.log(`[Worker] [${job.id}] 🏁 Finalizing overall media and credits...`);
-        const mediaInfo = await db.getMediaInfo(mediaId);
-
-        if (mediaInfo) {
-            const userId = mediaInfo.user_id;
-            const config = mediaInfo.input_config || {};
-            const duration = config.duration || '30-60';
-            const topic = config.topic || 'Media';
-            const creditCost = (CREDIT_COSTS[duration] || CREDIT_COSTS.default) as number;
-
-            await db.finalizeMedia(mediaId, resultBlobId);
-
-            // 6. Send Completion Email
-            if (mediaInfo.email) {
-                try {
-                    console.log(`[Worker] [${job.id}] 📧 Sending completion email to ${mediaInfo.email}...`);
-                    const signedUrl = await storage.getSignedUrl(resultBlobId);
-                    await mailer.sendRenderCompleteEmail(
-                        mediaInfo.email,
-                        signedUrl,
-                        topic,
-                        mediaInfo.name
-                    );
-                } catch (emailErr: any) {
-                    console.error(`[Worker] [${job.id}] ⚠️ Email sending failed:`, emailErr.message);
-                }
-            }
-
-            if (userId) {
-                try {
-                    await db.deductCredits(
-                        userId,
-                        creditCost,
-                        `Media generation: ${topic}`,
-                        mediaId,
-                        { media_id: mediaId, topic, duration, creditCost }
-                    );
-                    console.log(`[Worker] [${job.id}] 💳 Deducted ${creditCost} credits for User ${userId}`);
-                } catch (creditErr: any) {
-                    console.error(`[Worker] [${job.id}] ⚠️ Credit deduction failed:`, creditErr.message);
-                }
-            }
-        }
+        // 4 & 5. Idempotent finalization (step, media, credits, email)
+        console.log(`[Worker] [${job.id}] 💾 Finalizing (idempotent)...`);
+        await finalizeRenderSuccess({
+            mediaId,
+            stepId,
+            resultBlobId,
+            db,
+            mailer,
+            storage: { getSignedUrl: (id, exp) => storage.getSignedUrl(id, exp) },
+        });
 
         console.log(`[Worker] ✨ Job ${job.id} completed successfully!`);
     } catch (error: any) {
@@ -166,8 +124,40 @@ const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => 
     connection: {
         url: process.env.REDIS_URL as string,
     },
-    concurrency: 2,
+    concurrency: parseInt(process.env.FFMPEG_WORKER_CONCURRENCY ?? '2', 10) || 2,
 });
+
+const remotionWorker = new Worker<RemotionJobPayload>(
+    'remotion-render-tasks',
+    async (job: Job<RemotionJobPayload>) => {
+        const { mediaId, stepId, userId, assets, options } = job.data;
+        console.log(`[Remotion] 🚀 Starting job ${job.id} for media ${mediaId} (User: ${userId})`);
+        try {
+            await runRemotionRender({
+                payload: job.data,
+                storage,
+                db,
+                mailer,
+            });
+            console.log(`[Remotion] ✨ Job ${job.id} completed successfully!`);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : String(error);
+            console.error(`[Remotion] ❌ Job ${job.id} failed:`, msg);
+            try {
+                await db.updateStepStatus(stepId, 'failed', undefined, msg);
+            } catch (dbErr) {
+                console.error(`[Remotion] Failed to update step status:`, dbErr);
+            }
+            throw error;
+        }
+    },
+    {
+        connection: {
+            url: process.env.REDIS_URL as string,
+        },
+        concurrency: parseInt(process.env.REMOTION_WORKER_CONCURRENCY ?? '1', 10) || 1,
+    },
+);
 
 worker.on('ready', () => {
     const redisUrl = process.env.REDIS_URL || 'unknown';
@@ -176,7 +166,15 @@ worker.on('ready', () => {
 });
 
 worker.on('failed', (job, err) => {
-    console.error(`[Queue] Job ${job?.id} failed globally: ${err.message}`);
+    console.error(`[Queue] render-tasks job ${job?.id} failed globally: ${err.message}`);
+});
+
+remotionWorker.on('ready', () => {
+    console.log(`[Remotion] Worker ready for remotion-render-tasks`);
+});
+
+remotionWorker.on('failed', (job, err) => {
+    console.error(`[Queue] remotion-render-tasks job ${job?.id} failed globally: ${err.message}`);
 });
 
 // Initialize DB connection

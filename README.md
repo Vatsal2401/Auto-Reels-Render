@@ -5,8 +5,9 @@ This is a standalone Node.js worker for processing video rendering tasks using F
 ## Architecture
 
 - **Runtime**: Node.js (TypeScript)
-- **Queue**: BullMQ (Redis-backed)
-- **FFmpeg**: Executed via `child_process.spawn` with thread limits for memory stability.
+- **Queues**: BullMQ (Redis-backed). Two queues: `render-tasks` (FFmpeg, 60–90s / 90–120s) and `remotion-render-tasks` (Remotion Lambda, 30–60s).
+- **FFmpeg**: Executed via `child_process.spawn` (non-blocking). Used for medium/long durations.
+- **Remotion Lambda**: Used for 30–60s videos. Worker invokes Lambda, polls until done, downloads output, uploads to storage, then runs the same idempotent finalization as FFmpeg path.
 - **Storage**: S3 / Supabase Storage for assets and final renders.
 - **Database**: PostgreSQL for status updates.
 
@@ -67,11 +68,31 @@ pm2 startup
 | :----------------------------- | :--------------------------------------------- |
 | `REDIS_URL`                    | Upstash Redis connection string (rediss://...) |
 | `DATABASE_URL`                 | PostgreSQL connection string                   |
-| `CURRENT_BLOB_STORAGE`         | `s3` or `supabase`                             |
+| `CURRENT_BLOB_STORAGE`         | `s3` or `supabase` – **must match backend**   |
 | `AWS_REGION`                   | AWS Region (if using s3)                       |
 | `AWS_ACCESS_KEY_ID`            | AWS Access Key                                 |
 | `AWS_SECRET_ACCESS_KEY`        | AWS Secret Key                                 |
 | `S3_BUCKET_NAME`               | S3 Bucket name                                 |
-| `SUPABASE_STORAGE_URL`         | Supabase URL                                   |
-| `SUPABASE_STORAGE_KEY`         | Supabase Service Role Key                      |
-| `SUPABASE_STORAGE_BUCKET_NAME` | Supabase Bucket name                           |
+| `SUPABASE_STORAGE_*`           | Supabase endpoint, keys, bucket (if supabase)  |
+
+**Storage consistency:** Both FFmpeg and Remotion paths upload the final video to the **same** storage (Supabase or S3) via `CURRENT_BLOB_STORAGE`. Set the worker’s `CURRENT_BLOB_STORAGE` (and bucket/credentials) to match the backend so `final_url` and completion emails use the correct signed URLs (Supabase or S3).
+
+| **Remotion (30–60s path)**     |                                                 |
+| :----------------------------- | :---------------------------------------------- |
+| `REMOTION_SERVE_URL`           | Deployed Remotion site URL (from remotion-app)  |
+| `REMOTION_LAMBDA_FUNCTION_NAME`| Lambda function name (from remotion-app deploy) |
+| `REMOTION_LAMBDA_REGION`       | AWS region (e.g. `us-east-1`)                   |
+| `REMOTION_COMPOSITION_ID`      | Optional; default `ReelComposition`              |
+| `REMOTION_WORKER_CONCURRENCY`  | Optional; default `1`                            |
+| `FFMPEG_WORKER_CONCURRENCY`    | Optional; default `2`                            |
+
+**Remotion and S3:** You do **not** need your own S3 bucket or S3 credentials for Remotion Lambda. Remotion uses a bucket it creates in your AWS account; the worker only needs **AWS credentials** (e.g. `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) that can **invoke Lambda** and **read that Remotion bucket** (so we can download the render). The final video is then uploaded to **your app storage** (Supabase or S3) via `CURRENT_BLOB_STORAGE`. So you can use Supabase-only for app storage and still use Remotion Lambda.
+
+### Beat sync (aubio and ffprobe)
+
+For **30–60s** renders, pacing styles (rhythmic, viral, dramatic) use beat extraction to align cuts and motion to music. The worker expects:
+
+- **ffprobe** – used to get audio duration (same binary as FFmpeg; usually already present).
+- **aubio** – CLI `aubio beat <audiofile>` to get beat timestamps. Install locally (e.g. `apt install aubio-tools` or `brew install aubio`) so beat-based pacing works in development.
+
+If **aubio** is missing (e.g. in a minimal Lambda runtime), the worker falls back to a duration-based beat grid so pacing still runs without music-aware beats. For **Remotion Lambda**, add **aubio** (and ensure **ffprobe** is available) in your Lambda layer or container image so production renders get full beat-aware pacing.
