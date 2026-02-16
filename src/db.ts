@@ -100,13 +100,54 @@ export class DbService {
 
     async getMediaInfo(mediaId: string) {
         const query = `
-            SELECT m.user_id, m.input_config, u.email, u.name 
+            SELECT m.user_id, m.input_config, m.project_id, u.email, u.name 
             FROM media m
             LEFT JOIN users u ON m.user_id = u.id
             WHERE m.id = $1
         `;
         const res = await this.pool.query(query, [mediaId]);
         return res.rows[0];
+    }
+
+    /** When media completes, update linked project (status + output_url as blob id). Idempotent. */
+    async updateProjectOnMediaComplete(mediaId: string, resultBlobId: string): Promise<void> {
+        await this.pool.query(
+            `UPDATE projects p
+             SET status = 'completed', output_url = $1, completed_at = NOW(), updated_at = NOW()
+             FROM media m
+             WHERE m.id = $2 AND m.project_id = p.id AND p.status != 'completed'`,
+            [resultBlobId, mediaId],
+        );
+    }
+
+    /** Get project info for finalization (kinetic typography). Returns user_id, credit_cost, metadata. */
+    async getProjectInfo(projectId: string): Promise<{ user_id: string; credit_cost: number; metadata?: any } | null> {
+        const res = await this.pool.query(
+            'SELECT user_id, credit_cost, metadata FROM projects WHERE id = $1',
+            [projectId],
+        );
+        const row = res.rows[0];
+        return row ? { user_id: row.user_id, credit_cost: row.credit_cost ?? 0, metadata: row.metadata } : null;
+    }
+
+    /** Finalize project (kinetic typography): set completed and output_url only if not already completed. Idempotent. */
+    async finalizeProjectOnlyIfNotCompleted(projectId: string, resultBlobId: string): Promise<boolean> {
+        const res = await this.pool.query(
+            `UPDATE projects
+             SET status = 'completed', output_url = $1, completed_at = NOW(), updated_at = NOW()
+             WHERE id = $2 AND status != 'completed'
+             RETURNING id`,
+            [resultBlobId, projectId],
+        );
+        return (res.rowCount ?? 0) > 0;
+    }
+
+    /** Update project status (e.g. failed). Used by kinetic worker on error. */
+    async updateProjectStatus(projectId: string, status: string, errorMessage?: string): Promise<void> {
+        await this.pool.query(
+            `UPDATE projects SET status = $1, error_message = $2, updated_at = NOW() WHERE id = $3`,
+            [status, errorMessage ?? null, projectId],
+        );
     }
 
     async deductCredits(userId: string, amount: number, description: string, referenceId: string, metadata?: any) {

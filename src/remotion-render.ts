@@ -65,6 +65,12 @@ export interface PacingSceneInput {
     imageIndex: number;
 }
 
+export interface WatermarkConfig {
+    enabled: boolean;
+    type: 'text' | 'image';
+    value?: string;
+}
+
 export interface RemotionJobPayload {
     mediaId: string;
     stepId: string;
@@ -88,6 +94,8 @@ export interface RemotionJobPayload {
             pacing_style?: PacingStyle;
         };
     };
+    /** Set by backend from user plan. Default: no watermark for backward compatibility. */
+    monetization?: { watermark: WatermarkConfig };
 }
 
 export interface RemotionRenderParams {
@@ -227,6 +235,9 @@ export async function runRemotionRender(params: RemotionRenderParams): Promise<s
         }
     }
 
+    const watermark = payload.monetization?.watermark;
+    const watermarkEnabled = Boolean(watermark?.enabled && watermark?.type === 'text' && watermark?.value);
+
     const inputProps = {
         audioUrl,
         captionUrl,
@@ -246,6 +257,11 @@ export async function runRemotionRender(params: RemotionRenderParams): Promise<s
         ...(motionEmotion ? { motionEmotion } : {}),
         pacingStyle,
         transitionOverlap,
+        watermark: {
+            enabled: watermarkEnabled,
+            type: 'text' as const,
+            value: watermark?.value ?? 'Made with AutoReels',
+        },
         ...(pacingScenes ? {
             scenes: pacingScenes,
             totalDurationInFrames,

@@ -6,6 +6,8 @@ import { MailService } from './mail.js';
 import { finalizeRenderSuccess } from './finalize.js';
 import { runRemotionRender } from './remotion-render.js';
 import type { RemotionJobPayload } from './remotion-render.js';
+import { runKineticRemotionRender } from './remotion-kinetic-render.js';
+import type { KineticJobPayload } from './remotion-kinetic-render.js';
 import { join } from 'path';
 import { mkdirSync, rmSync, existsSync, createReadStream } from 'fs';
 import { tmpdir } from 'os';
@@ -25,6 +27,7 @@ export interface RenderJobPayload {
         preset: string;
         rendering_hints?: Record<string, unknown>;
     };
+    monetization?: { watermark: { enabled: boolean; type: 'text' | 'image'; value?: string } };
 }
 
 const logMemory = (stage: string) => {
@@ -79,7 +82,8 @@ const worker = new Worker('render-tasks', async (job: Job<RenderJobPayload>) => 
             rendering_hints: options.rendering_hints,
             outputPath,
             musicPath,
-            musicVolume: typeof options.rendering_hints?.musicVolume === 'number' ? options.rendering_hints.musicVolume : undefined
+            musicVolume: typeof options.rendering_hints?.musicVolume === 'number' ? options.rendering_hints.musicVolume : undefined,
+            watermark: job.data.monetization?.watermark,
         });
         console.log(`[Worker] [${job.id}] ✅ Video processed successfully.`);
         logMemory('Post-Process');
@@ -175,6 +179,46 @@ remotionWorker.on('ready', () => {
 
 remotionWorker.on('failed', (job, err) => {
     console.error(`[Queue] remotion-render-tasks job ${job?.id} failed globally: ${err.message}`);
+});
+
+const kineticWorker = new Worker<KineticJobPayload>(
+    'remotion-kinetic-typography-tasks',
+    async (job: Job<KineticJobPayload>) => {
+        const { projectId, userId } = job.data;
+        console.log(`[Kinetic] 🚀 Starting job ${job.id} for project ${projectId} (User: ${userId})`);
+        try {
+            await runKineticRemotionRender({
+                payload: job.data,
+                storage,
+                db,
+                mailer,
+            });
+            console.log(`[Kinetic] ✨ Job ${job.id} completed successfully!`);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : String(error);
+            console.error(`[Kinetic] ❌ Job ${job.id} failed:`, msg);
+            try {
+                await db.updateProjectStatus(projectId, 'failed', msg);
+            } catch (dbErr) {
+                console.error(`[Kinetic] Failed to update project status:`, dbErr);
+            }
+            throw error;
+        }
+    },
+    {
+        connection: {
+            url: process.env.REDIS_URL as string,
+        },
+        concurrency: parseInt(process.env.REMOTION_KINETIC_WORKER_CONCURRENCY ?? '1', 10) || 1,
+    },
+);
+
+kineticWorker.on('ready', () => {
+    console.log(`[Kinetic] Worker ready for remotion-kinetic-typography-tasks`);
+});
+
+kineticWorker.on('failed', (job, err) => {
+    console.error(`[Queue] remotion-kinetic-typography-tasks job ${job?.id} failed globally: ${err.message}`);
 });
 
 // Initialize DB connection

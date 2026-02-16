@@ -1,6 +1,42 @@
 import type { DbService } from './db.js';
 import type { MailService } from './mail.js';
 
+export interface FinalizeProjectParams {
+    projectId: string;
+    resultBlobId: string;
+    db: DbService;
+    storage: { getSignedUrl: (objectId: string, expiresIn?: number) => Promise<string> };
+    mailer?: MailService;
+}
+
+/**
+ * Idempotent project finalization (kinetic typography): update project to completed, deduct credits.
+ * Safe to call on retries.
+ */
+export async function finalizeProjectSuccess(params: FinalizeProjectParams): Promise<void> {
+    const { projectId, resultBlobId, db, mailer } = params;
+
+    const updated = await db.finalizeProjectOnlyIfNotCompleted(projectId, resultBlobId);
+    if (!updated) return;
+
+    const projectInfo = await db.getProjectInfo(projectId);
+    if (!projectInfo || !projectInfo.user_id) return;
+
+    const { user_id: userId, credit_cost: creditCost } = projectInfo;
+    try {
+        await db.deductCredits(
+            userId,
+            creditCost,
+            'Kinetic Typography render',
+            projectId,
+            { project_id: projectId, tool_type: 'kinetic-typography', creditCost },
+        );
+    } catch (creditErr: unknown) {
+        const msg = creditErr instanceof Error ? creditErr.message : String(creditErr);
+        console.error('[Finalize] Project credit deduction failed:', msg);
+    }
+}
+
 const CREDIT_COSTS: Record<string, number> = {
     '30-60': 1,
     '60-90': 2,
@@ -34,6 +70,8 @@ export async function finalizeRenderSuccess(params: FinalizeParams): Promise<voi
     if (!mediaFinalized) {
         return; // Media already completed
     }
+
+    await db.updateProjectOnMediaComplete(mediaId, resultBlobId);
 
     const mediaInfo = await db.getMediaInfo(mediaId);
     if (!mediaInfo) return;

@@ -93,6 +93,17 @@ async function main() {
     const height =
       aspectRatio === '1:1' ? 1080 : aspectRatio === '16:9' ? 720 : 1280;
 
+    // Watermark from user plan (same as backend: FREE = watermark on)
+    let isPremium = false;
+    const userRes = await pool.query(
+      'SELECT is_premium FROM users WHERE id = $1',
+      [media.user_id]
+    );
+    if (userRes.rows.length > 0) {
+      isPremium = userRes.rows[0].is_premium === true;
+    }
+    const hasWatermark = !isPremium;
+
     const payload = {
       mediaId: media.id,
       stepId,
@@ -118,6 +129,13 @@ async function main() {
           height,
         },
       },
+      monetization: {
+        watermark: {
+          enabled: hasWatermark,
+          type: 'text',
+          value: 'Made with AutoReels',
+        },
+      },
     };
 
     const queue = new Queue('remotion-render-tasks', {
@@ -132,6 +150,7 @@ async function main() {
     });
 
     console.log('Queued Remotion job:', job.id, 'for media:', mediaId);
+    console.log('Watermark:', hasWatermark ? 'ON (FREE user)' : 'OFF (PRO user)');
     if (durationCategory !== '30-60') {
       console.warn('Note: media duration is', durationCategory, '- worker still uses Remotion for this job.');
     }

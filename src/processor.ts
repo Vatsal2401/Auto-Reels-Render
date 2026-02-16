@@ -4,6 +4,12 @@ import { createReadStream, readFileSync, writeFileSync } from 'fs';
 import { Readable } from 'stream';
 import { AssGenerator } from './ass-generator.js';
 
+export interface WatermarkConfig {
+    enabled: boolean;
+    type: 'text' | 'image';
+    value?: string;
+}
+
 export interface RenderOptions {
     audioPath: string;
     captionPath: string;
@@ -15,13 +21,16 @@ export interface RenderOptions {
     musicVolume?: number;
     width?: number;
     height?: number;
+    /** When enabled, burn text watermark into video (from backend/user plan). */
+    watermark?: WatermarkConfig;
 }
 
 export class VideoProcessor {
     async process(options: RenderOptions): Promise<void> {
-        const { audioPath, captionPath, assetPaths, outputPath, preset, rendering_hints, musicPath, musicVolume } = options;
+        const { audioPath, captionPath, assetPaths, outputPath, preset, rendering_hints, musicPath, musicVolume, watermark } = options;
         const width = rendering_hints?.width || 720;
         const height = rendering_hints?.height || 1280;
+        const hasWatermark = Boolean(watermark?.enabled && watermark?.type === 'text' && watermark?.value);
 
         const audioDuration = await this.getMediaDuration(audioPath);
         const imageCount = assetPaths.length || 1;
@@ -102,6 +111,15 @@ export class VideoProcessor {
             complexFilters.push(`[v_merged_raw]copy[v_final]`);
         }
 
+        // 3b. Optional watermark (FREE plan; backend sets monetization.watermark)
+        const videoOutputLabel = hasWatermark ? 'v_watermarked' : 'v_final';
+        if (hasWatermark) {
+            const text = (watermark!.value ?? 'Made with AutoReels').replace(/'/g, "'\\\\\\''");
+            complexFilters.push(
+                `[v_final]drawtext=text='${text}':fontsize=24:fontcolor=white@0.6:x=w-tw-20:y=h-th-20[v_watermarked]`
+            );
+        }
+
         // 4. Audio Mixing
         const voIndex = assetPaths.length;
         const musicIndex = voIndex + 1;
@@ -131,7 +149,7 @@ export class VideoProcessor {
             '-i', audioPath,
             ...(musicPath ? ['-stream_loop', '-1', '-i', musicPath] : []),
             '-filter_complex', complexFilters.join(';'),
-            '-map', '[v_final]',
+            '-map', `[${videoOutputLabel}]`,
             '-map', finalAudioMap,
             '-c:v', 'libx264',
             '-preset', preset,
