@@ -1,5 +1,14 @@
+const isHindiLanguage = (lang: string | undefined): boolean =>
+    Boolean(lang && /hindi|hi|हिंदी/i.test(String(lang)));
+
+/** Font that supports Devanagari (Hindi). DejaVu Sans has good Unicode coverage on Linux. */
+const FONT_HINDI = 'DejaVu Sans';
+const FONT_DEFAULT = 'Arial';
+
 export class AssGenerator {
-    static generate(captions: any[], preset: string, position: string): string {
+    static generate(captions: any[], preset: string, position: string, language?: string): string {
+        const fontName = isHindiLanguage(language) ? FONT_HINDI : FONT_DEFAULT;
+
         // ASS Header
         let ass = `[Script Info]
 ScriptType: v4.00+
@@ -18,20 +27,20 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
         let styleDef = '';
         switch (preset.toLowerCase()) {
             case 'bold-stroke':
-                styleDef = `Style: Default,Arial,32,&H00FFFFFF,&H00FFFF00,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,4,0,${align},10,10,${marginV},1`;
+                styleDef = `Style: Default,${fontName},32,&H00FFFFFF,&H00FFFF00,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,4,0,${align},10,10,${marginV},1`;
                 break;
             case 'red-highlight':
-                styleDef = `Style: Default,Arial,32,&H00FFFFFF,&H000000FF,&H000000FF,&H00000000,1,0,0,0,100,100,0,0,1,4,2,${align},10,10,${marginV},1`;
+                styleDef = `Style: Default,${fontName},32,&H00FFFFFF,&H000000FF,&H000000FF,&H00000000,1,0,0,0,100,100,0,0,1,4,2,${align},10,10,${marginV},1`;
                 break;
             case 'karaoke-card':
                 // Clean Box background
-                styleDef = `Style: Default,Arial,32,&H00FFFFFF,&H00FF00FF,&H00000000,&H80FF00FF,1,0,0,0,100,100,0,0,3,4,0,${align},10,10,${marginV},1`;
+                styleDef = `Style: Default,${fontName},32,&H00FFFFFF,&H00FF00FF,&H00000000,&H80FF00FF,1,0,0,0,100,100,0,0,3,4,0,${align},10,10,${marginV},1`;
                 break;
             case 'beast':
-                styleDef = `Style: Default,Arial,32,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,1,0,0,100,100,0,0,1,5,0,${align},10,10,${marginV},1`;
+                styleDef = `Style: Default,${fontName},32,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,1,0,0,100,100,0,0,1,5,0,${align},10,10,${marginV},1`;
                 break;
             default: // Clean Minimal
-                styleDef = `Style: Default,Arial,32,&H00FFFFFF,&H00FFFF00,&H80000000,&H00000000,1,0,0,0,100,100,0,0,1,2,2,${align},10,10,${marginV},1`;
+                styleDef = `Style: Default,${fontName},32,&H00FFFFFF,&H00FFFF00,&H80000000,&H00000000,1,0,0,0,100,100,0,0,1,2,2,${align},10,10,${marginV},1`;
                 break;
         }
 

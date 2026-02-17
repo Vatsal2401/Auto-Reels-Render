@@ -86,10 +86,11 @@ export class VideoProcessor {
 
             if (isJson) {
                 const captions = JSON.parse(readFileSync(captionPath).toString());
+                const captionLanguage = captionsConfig.language ?? rendering_hints?.language;
 
                 // --- ASS SUBTITLE GENERATION (True Karaoke) ---
                 const assPath = captionPath.replace('.json', '.ass');
-                const assContent = AssGenerator.generate(captions, captionsConfig.preset || 'karaoke-card', captionsConfig.position || 'bottom');
+                const assContent = AssGenerator.generate(captions, captionsConfig.preset || 'karaoke-card', captionsConfig.position || 'bottom', captionLanguage);
                 writeFileSync(assPath, assContent);
 
                 const escapedAssPath = this.escapeFilterPath(assPath);

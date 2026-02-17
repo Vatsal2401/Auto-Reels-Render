@@ -122,6 +122,7 @@ async function main() {
           fast_mode: true,
           smart_micro_scenes: true,
           captions: inputConfig.captions,
+          language: inputConfig.language,
           pacing_style: inputConfig.pacing_style ?? intentData?.rendering_hints?.pacing_style,
           musicVolume:
             typeof musicConfig?.volume === 'number' ? musicConfig.volume : 0.2,

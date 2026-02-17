@@ -87,6 +87,7 @@ export interface RemotionJobPayload {
             width?: number;
             height?: number;
             captions?: unknown;
+            language?: string;
             musicVolume?: number;
             motion_preset?: string;
             motion_presets?: string[];
@@ -246,6 +247,7 @@ export async function runRemotionRender(params: RemotionRenderParams): Promise<s
             enabled: captionConfig.enabled !== false,
             preset: (captionConfig.preset as string) || 'karaoke-card',
             position: (captionConfig.position as string) || 'bottom',
+            language: (captionConfig.language as string) ?? (hints.language as string),
         },
         imageUrls,
         musicUrl,
