@@ -8,6 +8,8 @@ import { runRemotionRender } from './remotion-render.js';
 import type { RemotionJobPayload } from './remotion-render.js';
 import { runKineticRemotionRender } from './remotion-kinetic-render.js';
 import type { KineticJobPayload } from './remotion-kinetic-render.js';
+import { runVideoToolsJob } from './video-tools-processor.js';
+import type { VideoToolsJobPayload } from './video-tools-processor.js';
 import { join } from 'path';
 import { mkdirSync, rmSync, existsSync, createReadStream } from 'fs';
 import { tmpdir } from 'os';
@@ -219,6 +221,41 @@ kineticWorker.on('ready', () => {
 
 kineticWorker.on('failed', (job, err) => {
     console.error(`[Queue] remotion-kinetic-typography-tasks job ${job?.id} failed globally: ${err.message}`);
+});
+
+const videoToolsWorker = new Worker<VideoToolsJobPayload>(
+    'video-tools-tasks',
+    async (job: Job<VideoToolsJobPayload>) => {
+        const { projectId, userId, toolType } = job.data;
+        console.log(`[VideoTools] 🚀 Starting job ${job.id} for project ${projectId} (${toolType}, User: ${userId})`);
+        try {
+            await runVideoToolsJob(job.data, storage, db);
+            console.log(`[VideoTools] ✨ Job ${job.id} completed successfully!`);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : String(error);
+            console.error(`[VideoTools] ❌ Job ${job.id} failed:`, msg);
+            try {
+                await db.updateProjectStatus(projectId, 'failed', msg);
+            } catch (dbErr) {
+                console.error(`[VideoTools] Failed to update project status:`, dbErr);
+            }
+            throw error;
+        }
+    },
+    {
+        connection: {
+            url: process.env.REDIS_URL as string,
+        },
+        concurrency: parseInt(process.env.VIDEO_TOOLS_WORKER_CONCURRENCY ?? '2', 10) || 2,
+    },
+);
+
+videoToolsWorker.on('ready', () => {
+    console.log(`[VideoTools] Worker ready for video-tools-tasks`);
+});
+
+videoToolsWorker.on('failed', (job, err) => {
+    console.error(`[Queue] video-tools-tasks job ${job?.id} failed globally: ${err.message}`);
 });
 
 // Initialize DB connection
