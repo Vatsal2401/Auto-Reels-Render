@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 import { join } from 'path';
-import { createReadStream, readFileSync, writeFileSync } from 'fs';
+import { createReadStream, readFileSync, writeFileSync, existsSync } from 'fs';
 import { Readable } from 'stream';
 import { AssGenerator } from './ass-generator.js';
 
@@ -87,6 +87,7 @@ export class VideoProcessor {
             if (isJson) {
                 const captions = JSON.parse(readFileSync(captionPath).toString());
                 const captionLanguage = captionsConfig.language ?? rendering_hints?.language;
+                const isHindi = captionLanguage && /hindi|hi|हिंदी/i.test(String(captionLanguage));
 
                 // --- ASS SUBTITLE GENERATION (True Karaoke) ---
                 const assPath = captionPath.replace('.json', '.ass');
@@ -94,11 +95,14 @@ export class VideoProcessor {
                 writeFileSync(assPath, assContent);
 
                 const escapedAssPath = this.escapeFilterPath(assPath);
+                // For Hindi, use bundled font so Devanagari renders (avoids tofu). fontsdir is relative to worker root.
+                const fontsDir = join(__dirname, '..', 'fonts');
+                const useFontsDir = isHindi && existsSync(fontsDir);
+                const fontsDirOpt = useFontsDir ? `:fontsdir='${this.escapeFilterPath(fontsDir)}'` : '';
 
                 // Use subtitles filter directly on the stream
-                // Note: Pop-in animation is harder in pure ASS without VSFilterMod, so we rely on Karaoke Highlights for motion
                 complexFilters.push(
-                    `[v_merged_raw]subtitles = '${escapedAssPath}'[v_final]`
+                    `[v_merged_raw]subtitles='${escapedAssPath}'${fontsDirOpt}[v_final]`
                 );
 
                 // No loop needed, subtitles filter handles the whole file

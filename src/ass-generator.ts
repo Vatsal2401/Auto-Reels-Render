@@ -1,8 +1,8 @@
 const isHindiLanguage = (lang: string | undefined): boolean =>
     Boolean(lang && /hindi|hi|हिंदी/i.test(String(lang)));
 
-/** Font that supports Devanagari (Hindi). DejaVu Sans has good Unicode coverage on Linux. */
-const FONT_HINDI = 'DejaVu Sans';
+/** Font that supports Devanagari (Hindi). Use with fontsdir so the bundled font is loaded. */
+const FONT_HINDI = 'Noto Sans Devanagari';
 const FONT_DEFAULT = 'Arial';
 
 export class AssGenerator {

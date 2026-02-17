@@ -37,8 +37,8 @@ async function main() {
   let passed = 0;
   let failed = 0;
 
-  if (assHindi.includes('DejaVu Sans')) {
-    console.log('✅ Hindi language → ASS uses DejaVu Sans');
+  if (assHindi.includes('Noto Sans Devanagari')) {
+    console.log('✅ Hindi language → ASS uses Noto Sans Devanagari');
     passed++;
   } else {
     console.log('❌ Hindi language → ASS should use DejaVu Sans, got:', assHindi.match(/Style: Default,(\w+\s*\w*),/)?.[1] || '?');
