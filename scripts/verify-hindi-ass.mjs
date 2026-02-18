@@ -27,6 +27,10 @@ const sampleCaptions = [
   { start: 0, end: 2, text: 'नमस्ते दुनिया', words: [{ start: 0, end: 1, text: 'नमस्ते' }, { start: 1, end: 2, text: 'दुनिया' }] },
 ];
 
+const mixedLanguageCaptions = [
+  { start: 0, end: 3, text: 'ऊँची इमारत (Unchi imarat), घना कोहरा।', words: [{ start: 0, end: 1, text: 'ऊँची' }, { start: 1, end: 2, text: 'इमारत (Unchi imarat)' }, { start: 2, end: 3, text: 'घना कोहरा।' }] },
+];
+
 async function main() {
   const AssGenerator = await loadAssGenerator();
 
@@ -66,6 +70,15 @@ async function main() {
     passed++;
   } else {
     console.log('❌ Hindi text should appear in ASS output');
+    failed++;
+  }
+
+  const assMixed = AssGenerator.generate(mixedLanguageCaptions, 'karaoke-card', 'bottom', 'Hindi');
+  if (assMixed.includes('ऊँची') && !assMixed.includes('Unchi imarat')) {
+    console.log('✅ Mixed-language captions: parenthetical transliteration stripped for Hindi');
+    passed++;
+  } else {
+    console.log('❌ Mixed captions should strip "(Unchi imarat)" in Hindi mode');
     failed++;
   }
 

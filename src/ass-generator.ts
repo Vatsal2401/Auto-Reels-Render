@@ -1,6 +1,13 @@
 const isHindiLanguage = (lang: string | undefined): boolean =>
     Boolean(lang && /hindi|hi|हिंदी/i.test(String(lang)));
 
+/** Strip parenthetical transliteration e.g. "ऊँची इमारत (Unchi imarat)" -> "ऊँची इमारत" so only the primary script is shown. */
+function stripParentheticalTransliteration(text: string): string {
+    const idx = text.indexOf(' (');
+    if (idx === -1) return text;
+    return text.slice(0, idx).trim();
+}
+
 /** Font that supports Devanagari (Hindi). Use with fontsdir so the bundled font is loaded. */
 const FONT_HINDI = 'Noto Sans Devanagari';
 const FONT_DEFAULT = 'Arial';
@@ -8,6 +15,7 @@ const FONT_DEFAULT = 'Arial';
 export class AssGenerator {
     static generate(captions: any[], preset: string, position: string, language?: string): string {
         const fontName = isHindiLanguage(language) ? FONT_HINDI : FONT_DEFAULT;
+        const sanitizeForHindi = isHindiLanguage(language);
 
         // ASS Header
         let ass = `[Script Info]
@@ -59,6 +67,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
                 let cursorTime = cap.start; // Visual start time
 
                 cap.words.forEach((w: any) => {
+                    const wordText = sanitizeForHindi ? stripParentheticalTransliteration(String(w.text ?? '')) : String(w.text ?? '');
                     // Calculate wait time relative to cursor
                     // If word starts AFTER cursor (gap), we add a spacer \k or padding?
                     // ASS \k counts duration. \k10 = 0.1s highlight.
@@ -99,12 +108,12 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
                     if (duration < 0) duration = 0; // Sanity check
 
                     const cs = Math.round(duration * 100);
-                    text += `{\\k${cs}}${w.text} `;
+                    text += `{\\k${cs}}${wordText} `;
 
                     cursorTime = w.end;
                 });
             } else {
-                text = cap.text;
+                text = sanitizeForHindi ? stripParentheticalTransliteration(String(cap.text ?? '')) : String(cap.text ?? '');
             }
 
             ass += `Dialogue: 0,${start},${end},Default,,0,0,0,,${text.trim()}\n`;

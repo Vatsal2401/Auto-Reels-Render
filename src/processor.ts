@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { join, dirname } from 'path';
+import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { createReadStream, readFileSync, writeFileSync, existsSync } from 'fs';
 
@@ -98,9 +98,13 @@ export class VideoProcessor {
                 writeFileSync(assPath, assContent);
 
                 const escapedAssPath = this.escapeFilterPath(assPath);
-                // For Hindi, use bundled font so Devanagari renders (avoids tofu). fontsdir is relative to worker root.
-                const fontsDir = join(CURRENT_DIR, '..', 'fonts');
-                const useFontsDir = isHindi && existsSync(fontsDir);
+                // For Hindi, use bundled font so Devanagari renders (avoids tofu). Resolve to absolute path.
+                const fontsDir = resolve(CURRENT_DIR, '..', 'fonts');
+                const hindiFontFile = join(fontsDir, 'NotoSansDevanagari-Regular.ttf');
+                const useFontsDir = isHindi && existsSync(hindiFontFile);
+                if (isHindi && !useFontsDir) {
+                    console.warn(`[Processor] Hindi captions: font not found at ${hindiFontFile}. Run: npm run ensure-fonts`);
+                }
                 const fontsDirOpt = useFontsDir ? `:fontsdir='${this.escapeFilterPath(fontsDir)}'` : '';
 
                 // Use subtitles filter directly on the stream
