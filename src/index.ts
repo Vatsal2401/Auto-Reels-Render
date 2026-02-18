@@ -266,17 +266,44 @@ db.connect().then(() => {
     process.exit(1);
 });
 
-// Periodic Health Check Ping to Backend
-const API_BASE_URL = process.env.API_BASE_URL || 'https://ai-gen-reels-backend.onrender.com';
-setInterval(async () => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/health`);
-        if (response.ok) {
-            // console.log(`[Health] Ping to backend successful: ${response.status}`);
-        } else {
-            console.warn(`[Health] Ping to backend returned status: ${response.status}`);
+// Periodic Health Check Ping to Backend (worker uses DB directly; this is for monitoring only)
+// 503 = backend unreachable (e.g. not running locally, or Render service sleeping/overloaded).
+const API_BASE_URL =
+    process.env.API_BASE_URL ||
+    (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : 'https://ai-gen-reels-backend.onrender.com');
+
+const HEALTH_CHECK_ENABLED = process.env.HEALTH_CHECK_ENABLED === 'true';
+let healthCheckFailCount = 0;
+
+if (HEALTH_CHECK_ENABLED) {
+    console.log(`[Health] Pinging backend every 5s: ${API_BASE_URL}/health`);
+    setInterval(async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/health`, {
+                signal: AbortSignal.timeout(10000),
+            });
+            if (response.ok) {
+                if (healthCheckFailCount > 0) {
+                    console.warn(`[Health] Backend reachable again (${response.status}).`);
+                    healthCheckFailCount = 0;
+                }
+            } else {
+                healthCheckFailCount++;
+                if (healthCheckFailCount === 1 || healthCheckFailCount % 6 === 0) {
+                    console.warn(
+                        `[Health] Ping to backend returned ${response.status} (fail #${healthCheckFailCount}). ` +
+                            `URL=${API_BASE_URL}. Backend may be down or overloaded. Set API_BASE_URL if running locally.`
+                    );
+                }
+            }
+        } catch (error: any) {
+            healthCheckFailCount++;
+            if (healthCheckFailCount === 1 || healthCheckFailCount % 6 === 0) {
+                console.error(
+                    `[Health] Failed to ping backend: ${error.message} (fail #${healthCheckFailCount}). ` +
+                        `URL=${API_BASE_URL}. Is the backend running?`
+                );
+            }
         }
-    } catch (error: any) {
-        console.error(`[Health] Failed to ping backend: ${error.message}`);
-    }
-}, 5000);
+    }, 5000);
+}

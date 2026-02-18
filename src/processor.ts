@@ -1,6 +1,9 @@
 import { spawn } from 'child_process';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { createReadStream, readFileSync, writeFileSync, existsSync } from 'fs';
+
+const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
 import { Readable } from 'stream';
 import { AssGenerator } from './ass-generator.js';
 
@@ -96,7 +99,7 @@ export class VideoProcessor {
 
                 const escapedAssPath = this.escapeFilterPath(assPath);
                 // For Hindi, use bundled font so Devanagari renders (avoids tofu). fontsdir is relative to worker root.
-                const fontsDir = join(__dirname, '..', 'fonts');
+                const fontsDir = join(CURRENT_DIR, '..', 'fonts');
                 const useFontsDir = isHindi && existsSync(fontsDir);
                 const fontsDirOpt = useFontsDir ? `:fontsdir='${this.escapeFilterPath(fontsDir)}'` : '';
 
