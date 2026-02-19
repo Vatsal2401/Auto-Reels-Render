@@ -1,6 +1,14 @@
 const isHindiLanguage = (lang: string | undefined): boolean =>
     Boolean(lang && /hindi|hi|हिंदी/i.test(String(lang)));
 
+/** Detect Devanagari script directly from caption text — fallback when language tag is missing. */
+const hasDevanagariText = (captions: any[]): boolean =>
+    captions.some((c) => {
+        const mainText = String(c.text ?? '');
+        const wordText = Array.isArray(c.words) ? c.words.map((w: any) => String(w.text ?? '')).join('') : '';
+        return /[\u0900-\u097F]/.test(mainText + wordText);
+    });
+
 /** Strip parenthetical transliteration e.g. "ऊँची इमारत (Unchi imarat)" -> "ऊँची इमारत" so only the primary script is shown. */
 function stripParentheticalTransliteration(text: string): string {
     const idx = text.indexOf(' (');
@@ -14,8 +22,9 @@ const FONT_DEFAULT = 'Arial';
 
 export class AssGenerator {
     static generate(captions: any[], preset: string, position: string, language?: string): string {
-        const fontName = isHindiLanguage(language) ? FONT_HINDI : FONT_DEFAULT;
-        const sanitizeForHindi = isHindiLanguage(language);
+        const isHindi = isHindiLanguage(language) || hasDevanagariText(captions);
+        const fontName = isHindi ? FONT_HINDI : FONT_DEFAULT;
+        const sanitizeForHindi = isHindi;
 
         // ASS Header
         let ass = `[Script Info]

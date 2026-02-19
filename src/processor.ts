@@ -90,7 +90,8 @@ export class VideoProcessor {
             if (isJson) {
                 const captions = JSON.parse(readFileSync(captionPath).toString());
                 const captionLanguage = captionsConfig.language ?? rendering_hints?.language;
-                const isHindi = captionLanguage && /hindi|hi|हिंदी/i.test(String(captionLanguage));
+                const hasDevanagari = captions.some((c: any) => /[\u0900-\u097F]/.test(String(c.text ?? '') + (Array.isArray(c.words) ? c.words.map((w: any) => String(w.text ?? '')).join('') : '')));
+                const isHindi = (captionLanguage && /hindi|hi|हिंदी/i.test(String(captionLanguage))) || hasDevanagari;
 
                 // --- ASS SUBTITLE GENERATION (True Karaoke) ---
                 const assPath = captionPath.replace('.json', '.ass');
