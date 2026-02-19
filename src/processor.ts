@@ -98,10 +98,12 @@ export class VideoProcessor {
                 writeFileSync(assPath, assContent);
 
                 const escapedAssPath = this.escapeFilterPath(assPath);
-                // For Hindi, use bundled font so Devanagari renders (avoids tofu). Resolve to absolute path.
+                // Always pass fontsdir when Noto Sans Devanagari is present — FFmpeg uses it
+                // for Hindi (Devanagari) and falls back to system fonts for other scripts.
+                // This avoids tofu boxes even when language detection misses 'hindi'.
                 const fontsDir = resolve(CURRENT_DIR, '..', 'fonts');
                 const hindiFontFile = join(fontsDir, 'NotoSansDevanagari-Regular.ttf');
-                const useFontsDir = isHindi && existsSync(hindiFontFile);
+                const useFontsDir = existsSync(hindiFontFile);
                 if (isHindi && !useFontsDir) {
                     console.warn(`[Processor] Hindi captions: font not found at ${hindiFontFile}. Run: npm run ensure-fonts`);
                 }
