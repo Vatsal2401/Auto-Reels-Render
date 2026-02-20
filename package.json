@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "ensure-fonts": "node scripts/ensure-hindi-font.mjs",
+    "postinstall": "node scripts/ensure-hindi-font.mjs",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:hindi": "node scripts/verify-hindi-ass.mjs",
     "test:hindi-video": "node scripts/test-hindi-captions-local.mjs",

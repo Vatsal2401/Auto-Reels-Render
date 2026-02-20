@@ -105,6 +105,7 @@ export class VideoProcessor {
                 const fontsDir = resolve(CURRENT_DIR, '..', 'fonts');
                 const hindiFontFile = join(fontsDir, 'NotoSansDevanagari-Regular.ttf');
                 const useFontsDir = existsSync(hindiFontFile);
+                console.log(`[Processor] fontsDir=${fontsDir} hindiFontFile=${hindiFontFile} exists=${useFontsDir} isHindi=${isHindi}`);
                 if (isHindi && !useFontsDir) {
                     console.warn(`[Processor] Hindi captions: font not found at ${hindiFontFile}. Run: npm run ensure-fonts`);
                 }
