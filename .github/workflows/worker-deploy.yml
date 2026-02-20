@@ -44,7 +44,7 @@ jobs:
       - name: Copy build to VM
         run: |
           scp -o StrictHostKeyChecking=no -r \
-            dist package.json package-lock.json \
+            dist package.json package-lock.json fonts \
             $USER@$HOST:/home/$USER/backend-infra/render-worker
 
       - name: Deploy and restart
