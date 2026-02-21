@@ -8,6 +8,8 @@ import { runRemotionRender } from './remotion-render.js';
 import type { RemotionJobPayload } from './remotion-render.js';
 import { runKineticRemotionRender } from './remotion-kinetic-render.js';
 import type { KineticJobPayload } from './remotion-kinetic-render.js';
+import { runStockVideoRemotionRender } from './remotion-stock-video-render.js';
+import type { StockVideoJobPayload } from './remotion-stock-video-render.js';
 import { runVideoToolsJob } from './video-tools-processor.js';
 import type { VideoToolsJobPayload } from './video-tools-processor.js';
 import { join } from 'path';
@@ -256,6 +258,46 @@ videoToolsWorker.on('ready', () => {
 
 videoToolsWorker.on('failed', (job, err) => {
     console.error(`[Queue] video-tools-tasks job ${job?.id} failed globally: ${err.message}`);
+});
+
+const stockVideoWorker = new Worker<StockVideoJobPayload>(
+    'stock-video-render-tasks',
+    async (job: Job<StockVideoJobPayload>) => {
+        const { mediaId, stepId } = job.data;
+        console.log(`[StockVideo] 🚀 Starting job ${job.id} for media ${mediaId}`);
+        try {
+            await runStockVideoRemotionRender({
+                payload: job.data,
+                storage,
+                db,
+                mailer,
+            });
+            console.log(`[StockVideo] ✨ Job ${job.id} completed successfully!`);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : String(error);
+            console.error(`[StockVideo] ❌ Job ${job.id} failed:`, msg);
+            try {
+                await db.updateStepStatus(stepId, 'failed', undefined, msg);
+            } catch (dbErr) {
+                console.error(`[StockVideo] Failed to update step status:`, dbErr);
+            }
+            throw error;
+        }
+    },
+    {
+        connection: {
+            url: process.env.REDIS_URL as string,
+        },
+        concurrency: parseInt(process.env.STOCK_VIDEO_WORKER_CONCURRENCY ?? '1', 10) || 1,
+    },
+);
+
+stockVideoWorker.on('ready', () => {
+    console.log(`[StockVideo] Worker ready for stock-video-render-tasks`);
+});
+
+stockVideoWorker.on('failed', (job, err) => {
+    console.error(`[Queue] stock-video-render-tasks job ${job?.id} failed globally: ${err.message}`);
 });
 
 // Initialize DB connection

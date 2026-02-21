@@ -80,6 +80,8 @@ export interface RemotionJobPayload {
         caption: string;
         images: string[];
         music?: string;
+        stockVideos?: string[];
+        stockVideoTypes?: string[];
     };
     options: {
         preset: string;
